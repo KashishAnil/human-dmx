@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="13" fill="#16244a" />
+  <text
+    x="32"
+    y="19"
+    font-family="Haettenschweiler, 'Arial Narrow', Impact, sans-serif"
+    font-size="10"
+    letter-spacing="2.2"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    HUMAN
+  </text>
+  <text
+    x="32"
+    y="45"
+    font-family="Haettenschweiler, 'Arial Narrow', Impact, sans-serif"
+    font-size="27"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    DMX
+  </text>
+  <rect x="17" y="52" width="30" height="3.5" rx="1.75" fill="#b8963f" />
+</svg>

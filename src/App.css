@@ -1,0 +1,22 @@
+/* App-level overrides that sit on top of Tailwind and Ant Design.
+   Everything here is scoped to antd's own classes so it can never override
+   a Tailwind utility on the storefront. */
+
+#root {
+  min-height: 100vh;
+}
+
+.ant-table-wrapper .ant-table {
+  background: transparent;
+}
+
+/* antd's Segmented needs a touch more contrast on the warm paper. */
+.ant-segmented {
+  background-color: #eceadf;
+}
+
+/* Tables and Segmented controls must scroll rather than blow out the layout. */
+.ant-segmented {
+  max-width: 100%;
+  overflow-x: auto;
+}

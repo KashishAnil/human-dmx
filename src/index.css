@@ -1,0 +1,247 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   HUMAN DMX APPAREL — design tokens
+
+   Light-dominant with dark bands. The client's photography is
+   mostly white-background cut-outs, so the store runs on warm
+   paper and drops into deep navy for the story, footer and
+   merchant portal. Royal blue and gold come straight off the
+   brand patch.
+   ───────────────────────────────────────────────────────────── */
+@theme {
+  /* light surfaces */
+  --color-paper: #f7f5ef;
+  --color-card: #ffffff;
+  --color-well: #eceadf;
+  --color-line: #e3ded1;
+  --color-line-strong: #cfc8b6;
+
+  /* dark surfaces */
+  --color-ink: #0b1120;
+  --color-ink-2: #111a2e;
+  --color-ink-3: #1a2542;
+  --color-ink-4: #24314f;
+  --color-line-dark: #27324e;
+
+  /* type */
+  --color-head: #0b1120;
+  --color-body: #4d5769;
+  --color-soft: #868ea0;
+  --color-bone: #f7f5ef;
+  --color-muted: #9aa5bb;
+  --color-muted-2: #67728b;
+
+  /* brand */
+  --color-royal: #1f5fd0;
+  --color-royal-deep: #12388f;
+  --color-royal-light: #4a86d4;
+  --color-royal-tint: #e9f0fd;
+  --color-gold: #f2c02e;
+  --color-gold-soft: #f8dd7d;
+  --color-gold-deep: #c99a12;
+  --color-gold-ink: #8a6508;
+  --color-gold-tint: #fdf5dc;
+  --color-coral: #e8574f;
+  --color-grape: #7b5ea7;
+  --color-mint: #2f8f5f;
+
+  /* straight off the wordmark artwork */
+  --color-navy: #16244a;
+  --color-brass: #b8963f;
+
+  --font-display: "Anton", "Haettenschweiler", "Arial Narrow", sans-serif;
+  --font-body:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-script: "UnifrakturCook", "Luminari", fantasy;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes dmx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dmx-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(36px) scale(0.92);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(-7px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dmx-sweep {
+  0% {
+    transform: translateX(-140%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(340%) skewX(-18deg);
+  }
+}
+
+@keyframes dmx-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-14px) rotate(-1deg);
+  }
+}
+
+@keyframes dmx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dmx-eq {
+  from {
+    transform: scaleY(0.28);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* ── base ─────────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+  font-family: var(--font-body);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--color-paper);
+  color: var(--color-head);
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--color-gold);
+  color: var(--color-head);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-royal);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+button {
+  font-family: inherit;
+}
+
+@utility display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.005em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+@utility script {
+  font-family: var(--font-script);
+}
+
+@utility container-x {
+  width: 100%;
+  margin-inline: auto;
+  max-width: 86rem;
+  padding-inline: 1.25rem;
+  @media (width >= 48rem) {
+    padding-inline: 2rem;
+  }
+}
+
+@utility eyebrow-type {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+/* Halftone dot field — the eighties print texture, used on blue panels */
+@utility halftone {
+  background-image: radial-gradient(currentColor 1px, transparent 1.4px);
+  background-size: 12px 12px;
+}
+
+/* Fine paper grain for light sections */
+@utility grain {
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.14'/%3E%3C/svg%3E");
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.storefront ::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+.storefront ::-webkit-scrollbar-track {
+  background: var(--color-well);
+}
+.storefront ::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 99px;
+  border: 3px solid var(--color-well);
+}
+.storefront ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-royal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
