@@ -18,7 +18,10 @@ import type {
 } from "../../types";
 import {
   decodeJwtPayload,
+  emptyCart,
+  mapCart,
   mapCategory,
+  mapOrder,
   mapProduct,
   mapRole,
   toBackendProductBody,
@@ -242,6 +245,93 @@ const unwrap = <T>(response: unknown): T => {
   return response as T;
 };
 
+type QueryBase = (
+  arg: string | FetchArgs,
+) => Promise<{ data?: unknown; error?: FetchBaseQueryError }>;
+
+/** Slug from the product form → category ObjectId. Omitted when it doesn't match. */
+const productWriteBody = async (body: Partial<Product>, base: QueryBase) => {
+  const payload = toBackendProductBody(body);
+  if (!body.category) return payload;
+  const result = await base("/categories");
+  if (result.error || result.data === undefined) return payload;
+  const raw = unwrap<BackendCategory[] | { categories?: BackendCategory[] }>(
+    result.data,
+  );
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.categories)
+      ? raw.categories
+      : [];
+  const match = list
+    .map(mapCategory)
+    .find((category) => category.slug === body.category);
+  if (match) payload.category = match.id;
+  return payload;
+};
+
+const putProductFlag = async (
+  base: QueryBase,
+  id: string,
+  field: "isActive" | "isFeatured",
+) => {
+  const list = await base({ url: "/product", params: { limit: 100 } });
+  if (list.error) return { error: list.error };
+  const product = mapProductsList(list.data).find((item) => item.id === id);
+  if (!product) {
+    return {
+      error: {
+        status: 404,
+        data: { message: "Product not found" },
+      } as FetchBaseQueryError,
+    };
+  }
+  const result = await base({
+    url: `/product/${id}`,
+    method: "PUT",
+    body: {
+      [field]: field === "isActive" ? !product.active : !product.featured,
+    },
+  });
+  if (result.error) return { error: result.error };
+  return { data: mapProduct(unwrap<BackendProduct>(result.data)) };
+};
+
+/** Checkout form → POST /order body. Card data stays in the browser. */
+const checkoutBody = (body: Record<string, unknown>) => {
+  const customer = (body.customer ?? {}) as {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+  };
+  const shipping = (body.shipping ?? {}) as {
+    address1?: string;
+    address2?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+  };
+  const digits = String(customer.phone ?? "").replace(/\D/g, "");
+  return {
+    email: customer.email,
+    phoneNumber: digits || String(customer.phone ?? ""),
+    shippingAddress: {
+      recipientName: [customer.firstName, customer.lastName]
+        .filter(Boolean)
+        .join(" "),
+      streetAddress: [shipping.address1, shipping.address2]
+        .filter(Boolean)
+        .join(", "),
+      city: shipping.city,
+      state: shipping.state,
+      zipCode: String(shipping.zip ?? ""),
+      country: String(shipping.country ?? ""),
+    },
+  };
+};
+
 const mapProductsList = (response: unknown): Product[] => {
   const body = unwrap<{ products?: BackendProduct[] } | BackendProduct[]>(
     response,
@@ -318,7 +408,9 @@ export const api = createApi({
             lName,
             email: body.email,
             password: body.password,
-            phoneNumber: body.phone ? Number(body.phone.replace(/\D/g, "")) : undefined,
+            phoneNumber: body.phone
+              ? body.phone.replace(/\D/g, "")
+              : undefined,
           },
         };
       },
@@ -427,24 +519,30 @@ export const api = createApi({
     }),
 
     createProduct: builder.mutation<Product, Partial<Product>>({
-      query: (body) => ({
-        url: "/product",
-        method: "POST",
-        body: toBackendProductBody(body),
-      }),
-      transformResponse: (response: unknown) =>
-        mapProduct(unwrap<BackendProduct>(response)),
+      async queryFn(body, _api, _extra, base) {
+        const payload = await productWriteBody(body, base as QueryBase);
+        const result = await base({
+          url: "/product",
+          method: "POST",
+          body: payload,
+        });
+        if (result.error) return { error: result.error };
+        return { data: mapProduct(unwrap<BackendProduct>(result.data)) };
+      },
       invalidatesTags: ["Product", "Category", "Dashboard"],
     }),
     updateProduct: builder.mutation<Product, { id: string } & Partial<Product>>(
       {
-        query: ({ id, ...body }) => ({
-          url: `/product/${id}`,
-          method: "PUT",
-          body: toBackendProductBody(body),
-        }),
-        transformResponse: (response: unknown) =>
-          mapProduct(unwrap<BackendProduct>(response)),
+        async queryFn({ id, ...body }, _api, _extra, base) {
+          const payload = await productWriteBody(body, base as QueryBase);
+          const result = await base({
+            url: `/product/${id}`,
+            method: "PUT",
+            body: payload,
+          });
+          if (result.error) return { error: result.error };
+          return { data: mapProduct(unwrap<BackendProduct>(result.data)) };
+        },
         invalidatesTags: ["Product", "Category", "Dashboard", "Cart"],
       },
     ),
@@ -454,16 +552,15 @@ export const api = createApi({
     }),
     /* ---- no backend equivalents: left pointed at old paths so they fail visibly ---- */
     toggleProductActive: builder.mutation<Product, string>({
-      query: (id) => ({ url: `/products/${id}/toggle-active`, method: "PUT" }),
-      transformResponse: unwrap<Product>,
+      async queryFn(id, _api, _extra, base) {
+        return putProductFlag(base as QueryBase, id, "isActive");
+      },
       invalidatesTags: ["Product", "Category", "Cart"],
     }),
     toggleProductFeatured: builder.mutation<Product, string>({
-      query: (id) => ({
-        url: `/products/${id}/toggle-featured`,
-        method: "PUT",
-      }),
-      transformResponse: unwrap<Product>,
+      async queryFn(id, _api, _extra, base) {
+        return putProductFlag(base as QueryBase, id, "isFeatured");
+      },
       invalidatesTags: ["Product"],
     }),
     setStock: builder.mutation<
@@ -500,43 +597,91 @@ export const api = createApi({
 
     /* ------------------------------- cart (Phase 2) -------------------------------- */
     getCart: builder.query<ServerCart, void>({
-      query: () => "/cart",
-      transformResponse: unwrap<ServerCart>,
+      async queryFn(_arg, _api, _extra, base) {
+        ensureCartToken();
+        const result = await base("/cart");
+        if (result.error) {
+          const status = result.error.status;
+          if (status === 509 || status === 404) return { data: emptyCart() };
+          return { error: result.error };
+        }
+        return { data: mapCart(unwrap(result.data)) };
+      },
       providesTags: ["Cart"],
     }),
     addToCart: builder.mutation<
       ServerCart,
       { productId: string; size: string; qty?: number }
     >({
-      query: (body) => ({ url: "/cart/items", method: "POST", body }),
-      transformResponse: unwrap<ServerCart>,
+      query: (body) => {
+        ensureCartToken();
+        return {
+          url: "/cart",
+          method: "POST",
+          body: {
+            productId: body.productId,
+            size: body.size,
+            quantity: body.qty ?? 1,
+          },
+        };
+      },
+      transformResponse: (response: unknown) => mapCart(unwrap(response)),
       invalidatesTags: ["Cart"],
     }),
     updateCartLine: builder.mutation<
       ServerCart,
       { productId: string; size: string; qty: number }
     >({
-      query: (body) => ({ url: "/cart/items", method: "PUT", body }),
-      transformResponse: unwrap<ServerCart>,
+      query: (body) => {
+        ensureCartToken();
+        return {
+          url: `/cart/${body.productId}`,
+          method: "PUT",
+          body: { size: body.size, quantity: body.qty },
+        };
+      },
+      transformResponse: (response: unknown) => mapCart(unwrap(response)),
       invalidatesTags: ["Cart"],
     }),
     changeCartSize: builder.mutation<
       ServerCart,
       { productId: string; size: string; newSize: string }
     >({
-      query: (body) => ({ url: "/cart/items/size", method: "PUT", body }),
-      transformResponse: unwrap<ServerCart>,
+      async queryFn({ productId, size, newSize }, _api, _extra, base) {
+        ensureCartToken();
+        const current = await base("/cart");
+        const cart = current.error ? emptyCart() : mapCart(unwrap(current.data));
+        const qty =
+          cart.lines.find(
+            (line) => line.productId === productId && line.size === size,
+          )?.qty ?? 1;
+        const removed = await base({
+          url: `/cart/${productId}?size=${encodeURIComponent(size)}`,
+          method: "DELETE",
+        });
+        if (removed.error) return { error: removed.error };
+        const added = await base({
+          url: "/cart",
+          method: "POST",
+          body: { productId, size: newSize, quantity: qty },
+        });
+        if (added.error) return { error: added.error };
+        return { data: mapCart(unwrap(added.data)) };
+      },
       invalidatesTags: ["Cart"],
     }),
     removeCartLine: builder.mutation<
       ServerCart,
       { productId: string; size: string }
     >({
-      query: ({ productId, size }) => ({
-        url: `/cart/items/${productId}/${encodeURIComponent(size)}`,
-        method: "DELETE",
-      }),
-      transformResponse: unwrap<ServerCart>,
+      query: ({ productId, size }) => {
+        ensureCartToken();
+        return {
+          url: `/cart/${productId}?size=${encodeURIComponent(size)}`,
+          method: "DELETE",
+        };
+      },
+      transformResponse: (response: unknown) => mapCart(unwrap(response)),
       invalidatesTags: ["Cart"],
     }),
     clearCart: builder.mutation<ServerCart, void>({
@@ -557,8 +702,12 @@ export const api = createApi({
 
     /* ------------------------------ orders (Phase 2 / unavailable) ------------------------------- */
     checkout: builder.mutation<Order, Record<string, unknown>>({
-      query: (body) => ({ url: "/orders/checkout", method: "POST", body }),
-      transformResponse: unwrap<Order>,
+      query: (body) => ({
+        url: "/order",
+        method: "POST",
+        body: checkoutBody(body),
+      }),
+      transformResponse: (response: unknown) => mapOrder(unwrap(response)),
       invalidatesTags: [
         "Cart",
         "Order",

@@ -5,7 +5,6 @@ import {
   useGetCartQuery,
   useGetCategoriesQuery,
   useGetProductsQuery,
-  useGetSettingsQuery,
   type CartTotals,
   type PricedLine,
 } from "../redux/services/api";
@@ -14,14 +13,11 @@ import type { CartLine, CategoryMeta } from "../types";
 
 /**
  * Commerce data hooks. Products and categories come from the API only (no
- * static catalog fallback). Settings fall back to DEFAULT_SETTINGS while the
- * settings endpoint is unavailable.
+ * static catalog fallback). Settings are the local defaults — there is no
+ * settings endpoint, so the storefront does not request one.
  */
 
-export const useSettings = () => {
-  const { data } = useGetSettingsQuery();
-  return data ?? DEFAULT_SETTINGS;
-};
+export const useSettings = () => DEFAULT_SETTINGS;
 
 /** Categories from the API. Empty array while loading or on empty backend. */
 export const useCategories = (): CategoryMeta[] => {
