@@ -35,9 +35,12 @@ const ProductDetail = () => {
    * can tell "still loading" apart from "no such product" — the list-based
    * lookup flashed a 404 on every first paint.
    */
-  const { data: product, isLoading } = useGetProductQuery(slug ?? "", {
-    skip: !slug,
-  });
+  const { data: product, isLoading, isError, error } = useGetProductQuery(
+    slug ?? "",
+    {
+      skip: !slug,
+    },
+  );
   const products = useActiveProducts();
   const settings = useSettings();
   const categoryLabel = useCategoryLabel();
@@ -79,6 +82,19 @@ const ProductDetail = () => {
         <p className="text-[11px] uppercase tracking-[0.3em] text-soft">
           Loading…
         </p>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="container-x py-24">
+        <EmptyState
+          icon="!"
+          title="Couldn't load that piece"
+          copy={apiError(error, "Something went wrong talking to the store.")}
+          action={<LinkButton to="/shop">Back to shop</LinkButton>}
+        />
       </div>
     );
   }

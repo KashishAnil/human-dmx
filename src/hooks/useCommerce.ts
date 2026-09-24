@@ -9,18 +9,13 @@ import {
   type CartTotals,
   type PricedLine,
 } from "../redux/services/api";
-import { CATEGORIES, DEFAULT_SETTINGS } from "../data/catalog";
+import { DEFAULT_SETTINGS } from "../data/catalog";
 import type { CartLine, CategoryMeta } from "../types";
 
 /**
- * The app reads all of its commerce data through these hooks. They used to
- * select from localStorage-backed slices; they now sit on top of the API. The
- * shapes are deliberately unchanged so the components above them didn't have
- * to be rewritten.
- *
- * Each one returns usable data while the request is in flight — the shipped
- * defaults for settings and categories, an empty cart otherwise — so nothing
- * downstream has to guard against `undefined` on first render.
+ * Commerce data hooks. Products and categories come from the API only (no
+ * static catalog fallback). Settings fall back to DEFAULT_SETTINGS while the
+ * settings endpoint is unavailable.
  */
 
 export const useSettings = () => {
@@ -28,10 +23,20 @@ export const useSettings = () => {
   return data ?? DEFAULT_SETTINGS;
 };
 
-/** Categories as managed in the portal, falling back to the shipped set. */
+/** Categories from the API. Empty array while loading or on empty backend. */
 export const useCategories = (): CategoryMeta[] => {
   const { data } = useGetCategoriesQuery();
-  return data ?? CATEGORIES;
+  return data ?? [];
+};
+
+export const useCategoriesQueryState = () => {
+  const q = useGetCategoriesQuery();
+  return {
+    categories: q.data ?? [],
+    isLoading: q.isLoading,
+    isError: q.isError,
+    error: q.error,
+  };
 };
 
 /**
@@ -64,10 +69,36 @@ export const useProducts = () => {
   return data ?? [];
 };
 
+export const useProductsQueryState = (includeInactive = false) => {
+  const q = useGetProductsQuery(
+    includeInactive ? { includeInactive: true } : undefined,
+  );
+  return {
+    products: q.data ?? [],
+    isLoading: q.isLoading,
+    isError: q.isError,
+    error: q.error,
+  };
+};
+
 /** Only what shoppers should see — admins can hide a piece without deleting it. */
 export const useActiveProducts = () => {
   const { data } = useGetProductsQuery();
   return useMemo(() => (data ?? []).filter((p) => p.active), [data]);
+};
+
+export const useActiveProductsQueryState = () => {
+  const q = useGetProductsQuery();
+  const products = useMemo(
+    () => (q.data ?? []).filter((p) => p.active),
+    [q.data],
+  );
+  return {
+    products,
+    isLoading: q.isLoading,
+    isError: q.isError,
+    error: q.error,
+  };
 };
 
 export const useProductBySlug = (slug: string | undefined) => {
@@ -93,7 +124,7 @@ export interface CartLineView extends PricedLine, Pick<CartLine, "key"> {}
  * can't disagree.
  */
 export const useCart = () => {
-  const { data, isLoading, isFetching } = useGetCartQuery();
+  const { data, isLoading, isFetching, isError, error } = useGetCartQuery();
 
   return useMemo(() => {
     const lines: CartLineView[] = (data?.lines ?? []).map((line) => ({
@@ -105,12 +136,13 @@ export const useCart = () => {
       lines,
       totals: data?.totals ?? EMPTY_TOTALS,
       promo: data?.promo ?? null,
-      /** Notes about anything the server corrected (sold out, price moved). */
       adjustments: data?.adjustments ?? [],
       isLoading,
       isFetching,
+      isError,
+      error,
     };
-  }, [data, isLoading, isFetching]);
+  }, [data, isLoading, isFetching, isError, error]);
 };
 
 export const useActivePromo = () => useCart().promo;
@@ -127,4 +159,14 @@ export const useSession = () => useAppSelector((s) => s.auth.user);
 export const useOrders = () => {
   const { data } = useGetAllOrdersQuery();
   return data ?? [];
+};
+
+export const useOrdersQueryState = () => {
+  const q = useGetAllOrdersQuery();
+  return {
+    orders: q.data ?? [],
+    isLoading: q.isLoading,
+    isError: q.isError,
+    error: q.error,
+  };
 };

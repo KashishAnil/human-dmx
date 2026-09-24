@@ -12,6 +12,7 @@ import { useSettings } from "../../hooks/useCommerce";
 import {
   apiError,
   isFormValidationError,
+  useGetSettingsQuery,
   useResetSettingsMutation,
   useUpdateSettingsMutation,
 } from "../../redux/services/api";
@@ -36,6 +37,7 @@ const Section = ({
 
 const AdminContent = () => {
   const settings = useSettings();
+  const { isError, error } = useGetSettingsQuery();
   const [updateSettings, { isLoading: saving }] = useUpdateSettingsMutation();
   const [resetSettings] = useResetSettingsMutation();
   const [form] = Form.useForm<SiteSettings>();
@@ -63,6 +65,15 @@ const AdminContent = () => {
   return (
     <div className="space-y-6 pb-16">
       {toastHolder}
+
+      {isError && (
+        <p className="rounded-lg border border-coral/40 bg-coral/10 px-4 py-3 text-xs text-coral">
+          {apiError(
+            error,
+            "Settings API isn't available — showing static defaults. Saves won't persist.",
+          )}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>

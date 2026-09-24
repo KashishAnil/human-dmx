@@ -4,10 +4,8 @@ import type { AuthPayload, AuthUser } from "../services/api";
 
 /**
  * Holds the signed-in session. The merchant portal gates on `user.role`, and
- * the tokens are attached to every request by the API layer's base query.
- *
- * Replaces the old hard-coded DEMO_ADMIN check — the portal now authenticates
- * against `POST /auth/login` like any other client.
+ * the access token is attached to every request by the API layer's base query.
+ * `refreshToken` is unused with this backend (single JWT).
  */
 interface AuthState {
   user: AuthUser | null;

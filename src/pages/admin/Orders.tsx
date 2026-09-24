@@ -11,7 +11,7 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useOrders } from "../../hooks/useCommerce";
+import { useOrdersQueryState } from "../../hooks/useCommerce";
 import {
   apiError,
   useAddOrderNoteMutation,
@@ -40,7 +40,11 @@ const STATUSES: OrderStatus[] = [
 ];
 
 const AdminOrders = () => {
-  const orders = useOrders();
+  const {
+    orders,
+    isError: ordersError,
+    error: ordersErr,
+  } = useOrdersQueryState();
   const [updateStatus] = useUpdateOrderStatusMutation();
   const [addNote] = useAddOrderNoteMutation();
   const [removeOrder] = useDeleteOrderMutation();
@@ -187,6 +191,12 @@ const AdminOrders = () => {
           {counts.exchange === 1 ? "" : "s"} open
         </p>
       </div>
+
+      {ordersError && (
+        <p className="rounded-lg border border-coral/40 bg-coral/10 px-4 py-3 text-xs text-coral">
+          {apiError(ordersErr, "Orders aren't available yet.")}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <Input.Search

@@ -1,13 +1,17 @@
 import { Link } from "react-router";
 import { SectionHeading } from "../ui/Bits";
 import { LinkButton } from "../ui/Button";
-import { useActiveProducts, useCategories } from "../../hooks/useCommerce";
+import {
+  useActiveProductsQueryState,
+  useCategoriesQueryState,
+} from "../../hooks/useCommerce";
+import { apiError } from "../../redux/services/api";
 import { reveal, useGsap } from "../../lib/gsap";
 import { resolveImage } from "../../utils/Functions";
 
 const CategoryRail = () => {
-  const products = useActiveProducts();
-  const categories = useCategories();
+  const { products } = useActiveProductsQueryState();
+  const { categories, isError, error } = useCategoriesQueryState();
 
   const scope = useGsap<HTMLElement>(({ scope }) => {
     reveal(scope, ".cat-tile", { stagger: 0.09 });
@@ -31,6 +35,12 @@ const CategoryRail = () => {
           </LinkButton>
         }
       />
+
+      {isError && (
+        <p className="mt-6 rounded-lg border border-coral/30 bg-coral/10 px-4 py-3 text-xs text-coral">
+          {apiError(error, "Couldn't load categories.")}
+        </p>
+      )}
 
       <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {categories.map((category) => {

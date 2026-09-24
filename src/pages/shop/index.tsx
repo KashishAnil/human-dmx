@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import {
-  useActiveProducts,
+  useActiveProductsQueryState,
   useCategories,
   useCategoryLabel,
 } from "../../hooks/useCommerce";
 import ProductCard from "../../components/shop/ProductCard";
 import { EmptyState } from "../../components/ui/Bits";
 import { Button, LinkButton } from "../../components/ui/Button";
+import { apiError } from "../../redux/services/api";
 import { cn, isSoldOut, totalStock } from "../../utils/Functions";
 import type { Product } from "../../types";
 
@@ -45,7 +46,7 @@ const sortProducts = (list: Product[], key: SortKey) => {
 const Shop = () => {
   const { category } = useParams<{ category?: string }>();
   const [params, setParams] = useSearchParams();
-  const products = useActiveProducts();
+  const { products, isError, error } = useActiveProductsQueryState();
   const categories = useCategories();
   const categoryLabel = useCategoryLabel();
 
@@ -167,6 +168,12 @@ const Shop = () => {
               ? `Results for "${query}" — ${results.length} ${results.length === 1 ? "piece" : "pieces"}.`
               : "Every piece printed on black, shipped from Brooklyn. Exchanges only."}
           </p>
+
+          {isError && (
+            <p className="mt-4 max-w-xl rounded-lg border border-coral/30 bg-coral/10 px-4 py-3 text-xs text-coral">
+              {apiError(error, "Couldn't load products.")}
+            </p>
+          )}
 
           <div className="no-scrollbar mt-8 flex gap-2 overflow-x-auto pb-1">
             <Link

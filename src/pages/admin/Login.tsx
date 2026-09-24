@@ -9,16 +9,6 @@ import LogoMotion from "../../components/brand/LogoMotion";
 import { Button } from "../../components/ui/Button";
 import { adminTheme } from "./theme";
 
-/**
- * What `npm run seed` creates in the backend. Shown as a convenience for
- * local and demo installs — change SEED_ADMIN_* in the API's .env (and remove
- * this panel) before putting the portal in front of anyone.
- */
-const SEED_ADMIN = {
-  email: "admin@humandmxapparel.com",
-  password: "dmx19861986",
-};
-
 const AdminLogin = () => {
   const dispatch = useAppDispatch();
   const [login, { isLoading }] = useLoginMutation();
@@ -119,28 +109,6 @@ const AdminLogin = () => {
                 {isLoading ? "Signing in…" : "Sign In"}
               </Button>
             </form>
-
-            <div className="mt-7 rounded-lg border border-line bg-card p-5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gold">
-                Seeded account
-              </p>
-              <p className="mt-2 font-mono text-xs text-body">
-                {SEED_ADMIN.email}
-                <br />
-                {SEED_ADMIN.password}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail(SEED_ADMIN.email);
-                  setPassword(SEED_ADMIN.password);
-                  setError(null);
-                }}
-                className="mt-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-body transition hover:text-royal"
-              >
-                Fill them in →
-              </button>
-            </div>
 
             <Link
               to="/"

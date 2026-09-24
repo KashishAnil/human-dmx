@@ -45,7 +45,7 @@ const blank = (): Promo => ({
 });
 
 const AdminDiscounts = () => {
-  const { data: promos = [] } = useGetPromosQuery();
+  const { data: promos = [], isError, error } = useGetPromosQuery();
   const [createPromo] = useCreatePromoMutation();
   const [updatePromo] = useUpdatePromoMutation();
   const [removePromo] = useDeletePromoMutation();
@@ -198,6 +198,12 @@ const AdminDiscounts = () => {
   return (
     <div className="space-y-6">
       {toastHolder}
+
+      {isError && (
+        <p className="rounded-lg border border-coral/40 bg-coral/10 px-4 py-3 text-xs text-coral">
+          {apiError(error, "Discount codes aren't available yet.")}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>

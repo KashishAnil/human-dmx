@@ -19,7 +19,7 @@ import {
   useCategories,
   useCategoryLabel,
   useCategorySizes,
-  useProducts,
+  useProductsQueryState,
 } from "../../hooks/useCommerce";
 import {
   apiError,
@@ -75,7 +75,11 @@ const blankProduct = (): Product => ({
 });
 
 const AdminProducts = () => {
-  const products = useProducts();
+  const {
+    products,
+    isError: productsError,
+    error: productsErr,
+  } = useProductsQueryState(true);
   const categories = useCategories();
   const categoryLabel = useCategoryLabel();
   const categorySizes = useCategorySizes();
@@ -315,6 +319,12 @@ const AdminProducts = () => {
   return (
     <div className="space-y-6">
       {toastHolder}
+
+      {productsError && (
+        <p className="rounded-lg border border-coral/40 bg-coral/10 px-4 py-3 text-xs text-coral">
+          {apiError(productsErr, "Couldn't load products.")}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>

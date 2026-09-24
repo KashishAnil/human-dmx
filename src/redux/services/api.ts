@@ -6,7 +6,7 @@ import {
   type FetchBaseQueryError,
 } from "@reduxjs/toolkit/query/react";
 import { BASE_URL } from "../../constants/api";
-import { clearSession, setSession } from "../slices/authSlice";
+import { clearSession } from "../slices/authSlice";
 import type {
   CartLine,
   CategoryMeta,
@@ -16,10 +16,19 @@ import type {
   Promo,
   SiteSettings,
 } from "../../types";
+import {
+  decodeJwtPayload,
+  mapCategory,
+  mapProduct,
+  mapRole,
+  toBackendProductBody,
+  type BackendCategory,
+  type BackendProduct,
+} from "./mappers";
 
 /* ----------------------------- wire contracts ---------------------------- */
 
-/** Every endpoint answers with this envelope. */
+/** Legacy envelope from the previous API — unwrap when present. */
 interface Envelope<T> {
   success: boolean;
   message: string;
@@ -147,9 +156,8 @@ export interface CustomerRow {
 const CART_TOKEN_KEY = "humandmx:cartToken";
 
 /**
- * Guests are identified by an opaque cart token. The API sets it as a cookie
- * *and* echoes it in a header; we mirror it into localStorage and send it back
- * explicitly so the cart survives even where third-party cookies are blocked.
+ * Guests are identified by an opaque cart token. Mirrored in localStorage and
+ * sent as `x-cart-token` (Phase 2 cart wiring).
  */
 const readCartToken = () => {
   try {
@@ -165,22 +173,28 @@ const writeCartToken = (token: string) => {
       window.localStorage.setItem(CART_TOKEN_KEY, token);
     }
   } catch {
-    /* private mode — the cookie still covers the common case */
+    /* private mode */
   }
 };
 
-/**
- * The slice of store state this module reads. Declared locally rather than
- * imported as `RootState`, because the store imports this module — pulling
- * the type back in would close the cycle.
- */
+/** Ensure a guest cart token exists (UUID) before cart mutations. */
+export const ensureCartToken = (): string => {
+  const existing = readCartToken();
+  if (existing) return existing;
+  const token =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  writeCartToken(token);
+  return token;
+};
+
 interface AuthAware {
   auth: { accessToken: string | null; refreshToken: string | null };
 }
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: BASE_URL,
-  credentials: "include",
   prepareHeaders: (headers, { getState }) => {
     const token = (getState() as AuthAware).auth?.accessToken;
     if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -193,81 +207,52 @@ const rawBaseQuery = fetchBaseQuery({
 });
 
 /**
- * In-flight refresh, shared by every request that hits a 401 at the same time.
- *
- * A screen typically fires several queries at once. If the access token has
- * expired they all 401 together, and without this each one would start its own
- * refresh. The server rotates the refresh token on use, so the first call
- * invalidates the token the others are still holding — they'd fail, and a
- * failed refresh signs the user out. That was the "logged out when I open a
- * tab" bug: one stale request was enough to end a good session.
- */
-let refreshInFlight: Promise<AuthPayload | null> | null = null;
-
-/**
- * Wraps the base query to (a) capture the rotating guest cart token and
- * (b) transparently refresh an expired access token once before giving up,
- * so a merchant mid-edit isn't bounced to the login screen.
+ * On 401: clear the session. Admin routes re-render the login screen via
+ * `AdminRoute`. No refresh-token flow — this backend issues a single JWT.
  */
 const baseQuery: BaseQueryFn<
   string | FetchArgs,
   unknown,
   FetchBaseQueryError
 > = async (args, api, extraOptions) => {
-  let result = await rawBaseQuery(args, api, extraOptions);
+  const result = await rawBaseQuery(args, api, extraOptions);
 
   const echoed = (result.meta?.response as Response | undefined)?.headers.get(
     "x-cart-token",
   );
   if (echoed) writeCartToken(echoed);
 
-  const { refreshToken } = (api.getState() as AuthAware).auth ?? {};
-
-  if (result.error?.status === 401 && refreshToken) {
-    if (!refreshInFlight) {
-      refreshInFlight = (async () => {
-        const refresh = await rawBaseQuery(
-          {
-            url: "/auth/refresh-token",
-            method: "POST",
-            body: { refreshToken },
-          },
-          api,
-          extraOptions,
-        );
-
-        const payload = (refresh.data as Envelope<AuthPayload>)?.data ?? null;
-
-        if (payload?.accessToken) {
-          api.dispatch(setSession(payload));
-        } else if (refresh.error?.status === 401) {
-          /**
-           * Only a definitive rejection ends the session. A network drop or a
-           * 5xx leaves the credentials alone — the request simply fails and
-           * the next one can try again, rather than throwing the user out
-           * because the server hiccuped.
-           */
-          api.dispatch(clearSession());
-        }
-
-        return payload;
-      })().finally(() => {
-        refreshInFlight = null;
-      });
-    }
-
-    const payload = await refreshInFlight;
-    // Retry on the new token. Callers that arrived late reuse the same one.
-    if (payload?.accessToken) {
-      result = await rawBaseQuery(args, api, extraOptions);
-    }
+  if (result.error?.status === 401) {
+    api.dispatch(clearSession());
   }
 
   return result;
 };
 
-/** Unwraps the `{ success, message, data }` envelope down to `data`. */
-const unwrap = <T>(response: Envelope<T>): T => response.data;
+/** Unwrap `{ success, message, data }` when present; otherwise pass through. */
+const unwrap = <T>(response: unknown): T => {
+  if (
+    response &&
+    typeof response === "object" &&
+    "data" in response &&
+    "success" in response
+  ) {
+    return (response as Envelope<T>).data;
+  }
+  return response as T;
+};
+
+const mapProductsList = (response: unknown): Product[] => {
+  const body = unwrap<{ products?: BackendProduct[] } | BackendProduct[]>(
+    response,
+  );
+  const list = Array.isArray(body)
+    ? body
+    : Array.isArray(body?.products)
+      ? body.products
+      : [];
+  return list.map(mapProduct);
+};
 
 /* --------------------------------- api ----------------------------------- */
 
@@ -290,85 +275,184 @@ export const api = createApi({
     /* ------------------------------- auth -------------------------------- */
     login: builder.mutation<AuthPayload, { email: string; password: string }>({
       query: (body) => ({ url: "/auth/login", method: "POST", body }),
-      transformResponse: unwrap<AuthPayload>,
-      // A fresh session owns a different cart and a different order history.
+      transformResponse: (response: unknown, _meta, arg) => {
+        const raw = unwrap<{ token?: string } | string>(response);
+        const token =
+          typeof raw === "string"
+            ? raw
+            : typeof raw?.token === "string"
+              ? raw.token
+              : "";
+        const claims = decodeJwtPayload(token);
+        const role = mapRole(claims?.role as string | undefined);
+        const email = arg.email;
+        return {
+          accessToken: token,
+          // Backend has no refresh token; keep the field for AuthPayload shape.
+          refreshToken: "",
+          user: {
+            id: String(claims?.userId ?? ""),
+            // Token carries no name — use email for AdminLayout `fullName`.
+            fullName: email,
+            email,
+            role,
+            image: null,
+          },
+        } satisfies AuthPayload;
+      },
       invalidatesTags: ["Cart", "Order", "Profile"],
     }),
     signup: builder.mutation<
       AuthPayload,
       { fullName: string; email: string; password: string; phone?: string }
     >({
-      query: (body) => ({ url: "/auth/signup", method: "POST", body }),
-      transformResponse: unwrap<AuthPayload>,
+      query: (body) => {
+        const parts = body.fullName.trim().split(/\s+/);
+        const fName = parts[0] || body.fullName;
+        const lName = parts.slice(1).join(" ") || fName;
+        return {
+          url: "/auth/register",
+          method: "POST",
+          body: {
+            fName,
+            lName,
+            email: body.email,
+            password: body.password,
+            phoneNumber: body.phone ? Number(body.phone.replace(/\D/g, "")) : undefined,
+          },
+        };
+      },
+      // Register returns the user doc, not a token — caller should login after.
+      transformResponse: (response: unknown, _meta, arg) => {
+        const user = unwrap<{
+          _id?: string;
+          email?: string;
+          fName?: string;
+          lName?: string;
+          role?: string;
+          phoneNumber?: number;
+        }>(response);
+        return {
+          accessToken: "",
+          refreshToken: "",
+          user: {
+            id: String(user?._id ?? ""),
+            fullName:
+              [user?.fName, user?.lName].filter(Boolean).join(" ") ||
+              arg.fullName,
+            email: user?.email ?? arg.email,
+            role: mapRole(user?.role),
+            image: null,
+            phone: arg.phone,
+          },
+        } satisfies AuthPayload;
+      },
       invalidatesTags: ["Cart", "Order", "Profile"],
     }),
+    /** No backend logout — kept so the UI can call it; clearSession still runs. */
     logout: builder.mutation<unknown, void>({
       query: () => ({ url: "/auth/logout", method: "POST" }),
       invalidatesTags: ["Cart", "Order", "Profile"],
     }),
 
     /* ----------------------------- catalog ------------------------------- */
-    /**
-     * The catalog is small enough (single figures) that the shop page filters
-     * and sorts client-side, exactly as it did against the seed data. One
-     * request keeps that code untouched; add server-side paging here if the
-     * catalog ever outgrows a single page.
-     */
     getProducts: builder.query<Product[], { includeInactive?: boolean } | void>(
       {
-        query: (args) => ({
-          url: "/products",
-          params: {
-            limit: 100,
-            ...(args?.includeInactive ? { includeInactive: true } : {}),
-          },
+        query: () => ({
+          url: "/product",
+          params: { limit: 100 },
         }),
-        transformResponse: (response: Envelope<Paginated<Product>>) =>
-          response.data.docs,
+        transformResponse: (response: unknown, _meta, arg) => {
+          const products = mapProductsList(response);
+          if (arg && typeof arg === "object" && arg.includeInactive) {
+            return products;
+          }
+          return products.filter((p) => p.active);
+        },
         providesTags: ["Product"],
       },
     ),
+    /**
+     * Backend has no GET-by-slug. Load the list and match on mapped slug / id.
+     */
     getProduct: builder.query<
       Product & { categoryMeta: CategoryMeta | null },
       string
     >({
-      query: (slug) => `/products/${slug}`,
-      transformResponse: unwrap<
-        Product & { categoryMeta: CategoryMeta | null }
-      >,
+      async queryFn(slug, _api, _extra, base) {
+        const result = await base({ url: "/product", params: { limit: 100 } });
+        if (result.error) return { error: result.error };
+        const products = mapProductsList(result.data);
+        const product =
+          products.find((p) => p.slug === slug || p.id === slug) ?? null;
+        if (!product) {
+          return {
+            error: {
+              status: 404,
+              data: { message: "Product not found" },
+            } as FetchBaseQueryError,
+          };
+        }
+        return {
+          data: { ...product, categoryMeta: null },
+        };
+      },
       providesTags: (_r, _e, slug) => [{ type: "Product", id: slug }],
     }),
     getCategories: builder.query<
       (CategoryMeta & { id: string; productCount: number })[],
       void
     >({
-      query: () => "/categories",
-      transformResponse: unwrap<
-        (CategoryMeta & { id: string; productCount: number })[]
-      >,
+      async queryFn(_arg, _api, _extra, base) {
+        const result = await base("/categories");
+        // Backend returns 509 when the collection is empty — treat as [].
+        if (result.error) {
+          const status = result.error.status;
+          if (status === 509 || status === 404) return { data: [] };
+          return { error: result.error };
+        }
+        const raw = unwrap<BackendCategory[] | { categories?: BackendCategory[] }>(
+          result.data,
+        );
+        const list = Array.isArray(raw)
+          ? raw
+          : Array.isArray(
+                (raw as { categories?: BackendCategory[] }).categories,
+              )
+            ? (raw as { categories: BackendCategory[] }).categories
+            : [];
+        return { data: list.map(mapCategory) };
+      },
       providesTags: ["Category"],
     }),
 
     createProduct: builder.mutation<Product, Partial<Product>>({
-      query: (body) => ({ url: "/products", method: "POST", body }),
-      transformResponse: unwrap<Product>,
+      query: (body) => ({
+        url: "/product",
+        method: "POST",
+        body: toBackendProductBody(body),
+      }),
+      transformResponse: (response: unknown) =>
+        mapProduct(unwrap<BackendProduct>(response)),
       invalidatesTags: ["Product", "Category", "Dashboard"],
     }),
     updateProduct: builder.mutation<Product, { id: string } & Partial<Product>>(
       {
         query: ({ id, ...body }) => ({
-          url: `/products/${id}`,
+          url: `/product/${id}`,
           method: "PUT",
-          body,
+          body: toBackendProductBody(body),
         }),
-        transformResponse: unwrap<Product>,
+        transformResponse: (response: unknown) =>
+          mapProduct(unwrap<BackendProduct>(response)),
         invalidatesTags: ["Product", "Category", "Dashboard", "Cart"],
       },
     ),
     deleteProduct: builder.mutation<unknown, string>({
-      query: (id) => ({ url: `/products/${id}`, method: "DELETE" }),
+      query: (id) => ({ url: `/product/${id}`, method: "DELETE" }),
       invalidatesTags: ["Product", "Category", "Dashboard", "Cart"],
     }),
+    /* ---- no backend equivalents: left pointed at old paths so they fail visibly ---- */
     toggleProductActive: builder.mutation<Product, string>({
       query: (id) => ({ url: `/products/${id}/toggle-active`, method: "PUT" }),
       transformResponse: unwrap<Product>,
@@ -394,11 +478,6 @@ export const api = createApi({
       transformResponse: unwrap<Product>,
       invalidatesTags: ["Product", "Dashboard", "Cart"],
     }),
-    /**
-     * Several sizes in one request. The server groups by product so two sizes
-     * of the same item can't overwrite each other, which sequential
-     * single-variant calls would risk.
-     */
     bulkSetStock: builder.mutation<
       unknown,
       { updates: { productId: string; size: string; stock: number }[] }
@@ -410,12 +489,6 @@ export const api = createApi({
       }),
       invalidatesTags: ["Product", "Dashboard", "Cart"],
     }),
-
-    /**
-     * Stores images and returns their paths. Sent as multipart, so no
-     * Content-Type is set — the browser has to supply the multipart boundary
-     * itself, and naming the type here would omit it and break the parse.
-     */
     uploadImages: builder.mutation<{ paths: string[] }, File[]>({
       query: (files) => {
         const form = new FormData();
@@ -425,7 +498,7 @@ export const api = createApi({
       transformResponse: unwrap<{ paths: string[] }>,
     }),
 
-    /* ------------------------------- cart -------------------------------- */
+    /* ------------------------------- cart (Phase 2) -------------------------------- */
     getCart: builder.query<ServerCart, void>({
       query: () => "/cart",
       transformResponse: unwrap<ServerCart>,
@@ -482,7 +555,7 @@ export const api = createApi({
       invalidatesTags: ["Cart"],
     }),
 
-    /* ------------------------------ orders ------------------------------- */
+    /* ------------------------------ orders (Phase 2 / unavailable) ------------------------------- */
     checkout: builder.mutation<Order, Record<string, unknown>>({
       query: (body) => ({ url: "/orders/checkout", method: "POST", body }),
       transformResponse: unwrap<Order>,
@@ -495,7 +568,6 @@ export const api = createApi({
         "Promo",
       ],
     }),
-    /** Guest lookup — the email proves ownership of the order number. */
     trackOrder: builder.query<Order, { number: string; email: string }>({
       query: (body) => ({ url: "/orders/track", method: "POST", body }),
       transformResponse: unwrap<Order>,
@@ -504,7 +576,7 @@ export const api = createApi({
     getMyOrders: builder.query<Order[], void>({
       query: () => ({ url: "/orders/my-orders", params: { limit: 100 } }),
       transformResponse: (response: Envelope<Paginated<Order>>) =>
-        response.data.docs,
+        unwrap<Paginated<Order>>(response).docs,
       providesTags: ["Order"],
     }),
     requestExchange: builder.mutation<
@@ -523,7 +595,7 @@ export const api = createApi({
     getAllOrders: builder.query<Order[], void>({
       query: () => ({ url: "/orders/admin/all", params: { limit: 100 } }),
       transformResponse: (response: Envelope<Paginated<Order>>) =>
-        response.data.docs,
+        unwrap<Paginated<Order>>(response).docs,
       providesTags: ["Order"],
     }),
     updateOrderStatus: builder.mutation<
@@ -552,7 +624,7 @@ export const api = createApi({
       invalidatesTags: ["Order", "Dashboard", "Customer", "Product"],
     }),
 
-    /* ------------------------------ promos ------------------------------- */
+    /* ------------------------------ promos (unavailable) ------------------------------- */
     getPromos: builder.query<Promo[], void>({
       query: () => "/promos",
       transformResponse: unwrap<Promo[]>,
@@ -582,7 +654,7 @@ export const api = createApi({
       invalidatesTags: ["Promo", "Cart"],
     }),
 
-    /* ----------------------------- settings ------------------------------ */
+    /* ----------------------------- settings (unavailable — FE falls back to DEFAULT_SETTINGS) ------------------------------ */
     getSettings: builder.query<SiteSettings, void>({
       query: () => "/settings",
       transformResponse: unwrap<SiteSettings>,
@@ -591,7 +663,6 @@ export const api = createApi({
     updateSettings: builder.mutation<SiteSettings, Partial<SiteSettings>>({
       query: (body) => ({ url: "/settings", method: "PUT", body }),
       transformResponse: unwrap<SiteSettings>,
-      // Shipping and tax settings feed cart totals.
       invalidatesTags: ["Settings", "Cart"],
     }),
     resetSettings: builder.mutation<SiteSettings, void>({
@@ -600,7 +671,7 @@ export const api = createApi({
       invalidatesTags: ["Settings", "Cart"],
     }),
 
-    /* -------------------------- admin analytics -------------------------- */
+    /* -------------------------- admin analytics (unavailable) -------------------------- */
     getDashboard: builder.query<DashboardData, number | void>({
       query: (days) => ({ url: "/dashboard", params: { days: days || 30 } }),
       transformResponse: unwrap<DashboardData>,
@@ -609,7 +680,7 @@ export const api = createApi({
     getCustomers: builder.query<CustomerRow[], void>({
       query: () => ({ url: "/customers", params: { limit: 100 } }),
       transformResponse: (response: Envelope<Paginated<CustomerRow>>) =>
-        response.data.docs,
+        unwrap<Paginated<CustomerRow>>(response).docs,
       providesTags: ["Customer"],
     }),
   }),
@@ -662,15 +733,20 @@ export const {
 /** The error body the API returns alongside a non-2xx status. */
 interface ApiErrorBody {
   message?: string;
+  error?: string;
   errors?: unknown[];
 }
 
 /** Pulls a readable message out of an RTK Query error. */
 export const apiError = (error: unknown, fallback = "Something went wrong") => {
-  const data = (error as { data?: ApiErrorBody } | undefined)?.data;
-  if (typeof data?.message === "string") return data.message;
-  if (Array.isArray(data?.errors) && data.errors.length)
-    return String(data.errors[0]);
+  const data = (error as { data?: ApiErrorBody | string } | undefined)?.data;
+  if (typeof data === "string" && data.trim()) return data;
+  if (data && typeof data === "object") {
+    if (typeof data.message === "string") return data.message;
+    if (typeof data.error === "string") return data.error;
+    if (Array.isArray(data.errors) && data.errors.length)
+      return String(data.errors[0]);
+  }
   return fallback;
 };
 

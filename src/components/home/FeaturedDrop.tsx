@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
-import { useActiveProducts, useCategories } from "../../hooks/useCommerce";
+import {
+  useActiveProductsQueryState,
+  useCategories,
+} from "../../hooks/useCommerce";
 import ProductCard from "../shop/ProductCard";
 import { SectionHeading } from "../ui/Bits";
 import { LinkButton } from "../ui/Button";
+import { apiError } from "../../redux/services/api";
 import { cn } from "../../utils/Functions";
 import { reveal, useGsap } from "../../lib/gsap";
 
 const FeaturedDrop = () => {
-  const products = useActiveProducts();
+  const { products, isError, error } = useActiveProductsQueryState();
   const categories = useCategories();
   // Tab strip: "Everything" plus whatever categories the merchant has live.
   const FILTERS = [{ slug: "all", name: "Everything" }, ...categories];
@@ -41,8 +45,13 @@ const FeaturedDrop = () => {
           copy="Hand-printed in small runs. When a size is gone, it's gone until the next batch."
         />
 
-        <div className="no-scrollbar mt-10 flex gap-2 overflow-x-auto pb-1">
-          {FILTERS.map((f) => (
+        {isError && (
+          <p className="mt-6 rounded-lg border border-coral/30 bg-coral/10 px-4 py-3 text-xs text-coral">
+            {apiError(error, "Couldn't load products.")}
+          </p>
+        )}
+
+        <div className="no-scrollbar mt-10 flex gap-2 overflow-x-auto pb-1">          {FILTERS.map((f) => (
             <button
               key={f.slug}
               type="button"

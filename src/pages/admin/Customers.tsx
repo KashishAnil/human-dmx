@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Input, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { CustomerRow } from "../../redux/services/api";
-import { useGetCustomersQuery } from "../../redux/services/api";
+import { apiError, useGetCustomersQuery } from "../../redux/services/api";
 import { formatDate, money, round2 } from "../../utils/Functions";
 
 const AdminCustomers = () => {
@@ -11,7 +11,12 @@ const AdminCustomers = () => {
    * never register, so grouping by the email on the order is the only view
    * that shows everyone who has actually bought something.
    */
-  const { data: customers = [], isLoading } = useGetCustomersQuery();
+  const {
+    data: customers = [],
+    isLoading,
+    isError,
+    error,
+  } = useGetCustomersQuery();
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -111,6 +116,12 @@ const AdminCustomers = () => {
           Built from order history — no separate accounts to manage.
         </p>
       </div>
+
+      {isError && (
+        <p className="rounded-lg border border-coral/40 bg-coral/10 px-4 py-3 text-xs text-coral">
+          {apiError(error, "Customer list isn't available yet.")}
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         {[

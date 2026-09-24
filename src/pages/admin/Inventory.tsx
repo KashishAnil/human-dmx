@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, InputNumber, Segmented, message } from "antd";
-import { useCategoryLabel, useProducts } from "../../hooks/useCommerce";
+import { useCategoryLabel, useProductsQueryState } from "../../hooks/useCommerce";
 import {
   apiError,
   useBulkSetStockMutation,
@@ -9,7 +9,11 @@ import {
 import { cn, money, resolveImage, totalStock } from "../../utils/Functions";
 
 const AdminInventory = () => {
-  const products = useProducts();
+  const {
+    products,
+    isError: productsError,
+    error: productsErr,
+  } = useProductsQueryState(true);
   const categoryLabel = useCategoryLabel();
   const [setStock] = useSetStockMutation();
   const [bulkSetStock] = useBulkSetStockMutation();
@@ -68,6 +72,12 @@ const AdminInventory = () => {
           Stock updates here show on the storefront immediately.
         </p>
       </div>
+
+      {productsError && (
+        <p className="rounded-lg border border-coral/40 bg-coral/10 px-4 py-3 text-xs text-coral">
+          {apiError(productsErr, "Couldn't load inventory.")}
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         {[

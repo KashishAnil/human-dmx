@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { useCategoryLabel } from "../../hooks/useCommerce";
-import { useGetDashboardQuery } from "../../redux/services/api";
+import { apiError, useGetDashboardQuery } from "../../redux/services/api";
 import {
   BarList,
   StatTile,
@@ -45,7 +45,7 @@ const Dashboard = () => {
    * browser from the full order list — that only works while every order fits
    * in memory, and it silently under-reports once the list is paginated.
    */
-  const { data, isLoading } = useGetDashboardQuery(30);
+  const { data, isLoading, isError, error } = useGetDashboardQuery(30);
   const categoryLabel = useCategoryLabel();
 
   useEffect(() => {
@@ -115,6 +115,12 @@ const Dashboard = () => {
           All orders →
         </Link>
       </div>
+
+      {isError && (
+        <p className="rounded-lg border border-coral/40 bg-coral/10 px-4 py-3 text-xs text-coral">
+          {apiError(error, "Dashboard data isn't available yet.")}
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile

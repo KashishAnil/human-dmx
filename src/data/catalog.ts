@@ -1,12 +1,10 @@
-import type { CategoryMeta, CategorySlug, SiteSettings } from "../types";
+import type { CategorySlug, SiteSettings } from "../types";
 
 /**
- * Static assets and first-paint fallbacks.
+ * Static assets and settings defaults.
  *
- * The catalog itself (products, categories, promos, site copy) is served by
- * the API and managed in the merchant portal — what's left here is the shipped
- * imagery plus the defaults the UI renders while the first request is in
- * flight, so nothing has to guard against `undefined`.
+ * Products and categories come from the API. Settings and the lookbook stay
+ * local because the backend has no settings/content endpoints yet.
  */
 
 /**
@@ -34,42 +32,6 @@ export const IMG = {
   /* brand mascot, transparent */
   mascot: "/images/products/logo-mascot.png",
 } as const;
-
-/** Fallback rail — replaced by `useCategories()` once the API responds. */
-export const CATEGORIES: CategoryMeta[] = [
-  {
-    slug: "hoodies",
-    sizes: ["S", "M", "L", "XL", "XXL"],
-    name: "Hoodies",
-    tagline: "Heavyweight fleece, front graphic",
-    image: IMG.hoodieFront,
-    price: 40,
-  },
-  {
-    slug: "t-shirts",
-    sizes: ["S", "M", "L", "XL", "XXL"],
-    name: "T-Shirts",
-    tagline: "Cotton tees, back hit",
-    image: IMG.teeBack,
-    price: 20,
-  },
-  {
-    slug: "hats",
-    sizes: ["One Size"],
-    name: "Hats",
-    tagline: "Snapbacks, gold embroidery",
-    image: IMG.capFront,
-    price: 20,
-  },
-  {
-    slug: "sweater-hats",
-    sizes: ["One Size"],
-    name: "Sweater Hats",
-    tagline: "Knit beanies, cuffed",
-    image: IMG.beanie,
-    price: 20,
-  },
-];
 
 export const CATEGORY_LABEL: Record<CategorySlug, string> = {
   hoodies: "Hoodies",
